@@ -15,6 +15,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.*;
+import java.security.spec.*;
 import java.util.Arrays;
 import java.util.Base64;
 
@@ -25,11 +29,11 @@ public class WebAuthnServiceTest {
     static Base64.Decoder decoder = Base64.getDecoder();
     @Test
     @DisplayName("JSON 파싱 확인하기")
-    public void parseAttestationObject() throws IOException {
-//        String sig = "MEUCIG1woNzPxi/1Kga7PeMHLfZHgcKGD6gHcHnhjDtivMe2AiEA3snRANE1hCwvMSTxwZxIyUt61WGDggcVHol6x+cVxfo=";
+    public void parseAttestationObject() throws IOException, NoSuchAlgorithmException, NoSuchProviderException, InvalidParameterSpecException, InvalidKeySpecException, InvalidKeyException, SignatureException {
+        String sig = "MEUCIG1woNzPxi/1Kga7PeMHLfZHgcKGD6gHcHnhjDtivMe2AiEA3snRANE1hCwvMSTxwZxIyUt61WGDggcVHol6x+cVxfo=";
         String authData = "SZYN5YgOjGh0NBcPZHZgW4/krrmihjLHmVzzuoMdl2NFAAAAAK3OAAI1vMYKZIsLJfHwVQMALQLrCx4Ysi2kDMgBe625L/VTwp4x15pOM9zQki2LQ5DKQHMtL2yF8e3vsVm9y6UBAgMmIAEhWCCY19fn+dGOG93ObKtWSUHtOtnkD3N/MZMOFAV2PB7A1iJYIA9zbQafhp/pXUL6DgNuLIZ4fIzs34cT4qETWXmiSOTo";
         String credentialId = "AusLHhiyLaQMyAF7rbkv9VPCnjHXmk4z3NCSLYtDkMpAcy0vbIXx7e-xWb3L";
-//        byte[] dsig = decoder.decode(sig);
+        byte[] dsig = decoder.decode(sig);
         byte[] dAuth = decoder.decode(authData);
 //        byte[] dCId = decoder.decode(credentialId);
 
@@ -41,9 +45,12 @@ public class WebAuthnServiceTest {
         System.out.println();
 //        System.out.println("dsig = " + Arrays.toString(dsig));
 //        System.out.println(dsig.length);
+        byte[] AAGUID = Arrays.copyOfRange(dAuth, 36, 53);
+        System.out.println("AAGUID : " + Arrays.toString(AAGUID));
         byte[] idLenBytes = Arrays.copyOfRange(dAuth, 53, 55);
         int idLen = Integer.parseInt(new BigInteger(idLenBytes).toString(16), 16);
         System.out.println("IdLen = " + idLen);
+
 
 //         AusLHhiyLaQMyAF7rbkv9VPCnjHXmk4z3NCSLYtDkMpAcy0vbIXx7e-xWb3L // maqybe credential id
         byte[] credentialIdBytes = Arrays.copyOfRange(dAuth, 55, 55 + idLen);
@@ -69,6 +76,41 @@ public class WebAuthnServiceTest {
         System.out.println("curveType : " + publicKey.curveType);
         System.out.println("xCoordinate : " + publicKey.xCoordinate);
         System.out.println("yCoordinate : " + publicKey.yCoordinate);
+        BigInteger x = new BigInteger(1, minus2);
+        BigInteger y = new BigInteger(1, minus3);
+        System.out.println(x);
+        System.out.println(y);
+
+        ECPoint ecPoint = new ECPoint(x, y);
+        ECGenParameterSpec parameterSpec = new ECGenParameterSpec("secp256r1");
+        AlgorithmParameters parameters = AlgorithmParameters.getInstance("EC");
+        parameters.init(parameterSpec);
+        ECParameterSpec ecParameterSpec = parameters.getParameterSpec(ECParameterSpec.class);
+        ECPublicKeySpec publicKeySpec = new ECPublicKeySpec(ecPoint, ecParameterSpec);
+        KeyFactory keyFactory = KeyFactory.getInstance("EC");
+        java.security.PublicKey pubKey = keyFactory.generatePublic(publicKeySpec);
+
+
+
+
+        // generate clientDataHash
+        String clientDataJson = "{\n" +
+                "  \"origin\" : \"http://localhost:8081\",\n" +
+                "  \"challenge\" : \"YU55NDItQmJ1bXREQkhIdEN1UWVJTkhDQ0VZ\",\n" +
+                "  \"crossOrigin\" : false,\n" +
+                "  \"type\" : \"webauthn.create\"\n" +
+                "}";
+        MessageDigest md = MessageDigest.getInstance("SHA-256");
+        md.update(clientDataJson.getBytes());
+        String clientDataHash = bytesToHex(md.digest());
+
+        // signature verify
+//        Signature signature = Signature.getInstance("SHA256withECDSA", "SunEC");
+//        signature.initVerify(pubKey);
+//        signature.update();
+//        signature.verify(dsig);
+
+
     }
     private static String stringifyCBOR(byte[] cbor) throws IOException {
         CBORFactory cborFactory = new CBORFactory();
@@ -83,6 +125,15 @@ public class WebAuthnServiceTest {
         jsonGenerator.flush();
         return stringWriter.toString();
     }
+
+    private String bytesToHex(byte[] bytes) {
+        StringBuilder builder = new StringBuilder();
+        for (byte b : bytes) {
+            builder.append(String.format("%02x", b));
+        }
+        return builder.toString();
+    }
+
     static class PublicKey {
         @JsonProperty("1")
         String keyType;
