@@ -117,6 +117,7 @@ public class WebAuthnService {
     }
 
     private ClientData parseClientData(String clientDataJSON) throws JsonProcessingException {
+        log.info("clientDataJSON : {}", clientDataJSON);
         String decodedClientData = new String(decoder.decode(clientDataJSON), StandardCharsets.UTF_8);
         return objMapper.readValue(decodedClientData, new TypeReference<>() {
         });
