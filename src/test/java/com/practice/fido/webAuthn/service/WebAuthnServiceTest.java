@@ -40,12 +40,14 @@ public class WebAuthnServiceTest {
 
         // get publicKey from Authenticator Data
         PublicKeyJson publicKeyJson = new ObjectMapper().readValue(stringifyCBOR(publicKeyObject), new TypeReference<>() {});
-
         byte[] minus2 = decoder.decode(publicKeyJson.xCoordinate);
-        byte[] minus3 =  decoder.decode(publicKeyJson.yCoordinate);
+        byte[] minus3 = decoder.decode(publicKeyJson.yCoordinate);
+
 
         BigInteger x = new BigInteger(1, minus2);
         BigInteger y = new BigInteger(1, minus3);
+
+        System.out.println("x = " + x + "\ny = " + y);
 
         ECPoint ecPoint = new ECPoint(x, y);
         ECGenParameterSpec parameterSpec = new ECGenParameterSpec("secp256r1");
@@ -60,11 +62,17 @@ public class WebAuthnServiceTest {
         String mockClientDataJson = "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiZUZkUlozQnRSMkpoVHpSb2JrRklVbFZtTm1aZlJHRmZia2xWIiwib3JpZ2luIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgxIiwiY3Jvc3NPcmlnaW4iOmZhbHNlfQ==";
         byte[] clientDataHash = hash("SHA-256", mockClientDataJson);
 
+
         // make a message to verify the signature with alg
         byte[] message = ByteBuffer.allocate(decodedAuthData.length + clientDataHash.length)
                 .put(decodedAuthData)
                 .put(clientDataHash)
                 .array();
+
+        System.out.println("decodedAuthData = " + Arrays.toString(decodedAuthData));
+        System.out.println("clientDataHash = " + Arrays.toString(clientDataHash));
+        System.out.println("message = " + Arrays.toString(message));
+
 
         // verify the signature
         Signature signature = Signature.getInstance("SHA256withECDSA", "SunEC");
@@ -77,7 +85,7 @@ public class WebAuthnServiceTest {
 
     private static byte[] hash(String alg, String clientDataJson) throws NoSuchAlgorithmException {
         MessageDigest md = MessageDigest.getInstance(alg);
-        md.update(clientDataJson.getBytes());
+        md.update(decoder.decode(clientDataJson));
         return md.digest();
     }
 
