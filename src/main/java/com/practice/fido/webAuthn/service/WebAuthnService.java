@@ -10,6 +10,7 @@ import com.fasterxml.jackson.dataformat.cbor.CBORParser;
 import com.practice.fido.webAuthn.dto.PubKeyCredCreatingOptions;
 import com.practice.fido.webAuthn.dto.PublicKeyCredential;
 import com.practice.fido.webAuthn.entity.auth.*;
+import com.practice.fido.webAuthn.entity.domain.User;
 import com.practice.fido.webAuthn.repository.ChallengeRepository;
 import com.practice.fido.webAuthn.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -29,14 +30,6 @@ import java.util.List;
 @Transactional
 public class WebAuthnService {
 
-    /**
-     * challenge
-     * rp
-     * user
-     * pubKeyCredParams
-     * timeout
-     * attestation
-     */
     private static final SecureRandom random = new SecureRandom();
     private static final Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
     private static final Base64.Decoder decoder = Base64.getDecoder();
@@ -48,10 +41,6 @@ public class WebAuthnService {
     public WebAuthnService(ChallengeRepository challengeRepository, UserRepository userRepository) {
         this.challengeRepository = challengeRepository;
         this.userRepository = userRepository;
-    }
-
-    public PubKeyCredCreatingOptions startRegistration() {
-        return null;
     }
 
     public String getChallenge() {
@@ -69,13 +58,10 @@ public class WebAuthnService {
         String rpId = "localhost";
         RelyingParty rp = new RelyingParty(rpName, rpId);
 
-        // user
-//        User user = userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("존해하지 않는 사용자"));
-//        String name = user.getUsername();
-//        String displayName = user.getDisplayName();
-        String userId = "1";
-        String name = "jinwoo";
-        String displayName = "hello";
+        String userId = "g-BuqvgcZ2VAhx_QAm7KSw";
+        User user = userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("존해하지 않는 사용자"));
+        String name = user.getUsername();
+        String displayName = user.getDisplayName();
         UserInfo userInfo = new UserInfo(userId, name, displayName);
 
         //pubKeyCredParams
@@ -99,17 +85,28 @@ public class WebAuthnService {
                 .build();
     }
     public boolean attestPublicKeyCredential(PublicKeyCredential credential) throws IOException {
+        // credential parsing
+        ClientData clientData = parseClientData(credential.getClientDataJSON());
+        Attestation attestation = parseAttestation(credential.getAttestationObject());
+
+        // x5c 가 존재하지 않는다면 self attestation
+        if(attestation.attStmt.getX5c().isBlank()) {
+            // 1. authData.alg 와 attStmt.alg 가 같은지 비교
+            // 2. attStmt.sig 를 authData 와 clientData 그리고 public key 를 이용해서 검증
+            // 3. self attestation 을 했다는 것을 표현하는 정보를 검증 결과로 반환해야함
+            //    attestation truth path / jwt ?
+
+        }
         log.info("authenticatorAttachment : {}", credential.getAuthenticatorAttachment());
         log.info("id : {}", credential.getId());
         log.info("type : {}", credential.getType());
-        ClientData clientData = parseClientData(credential.getClientDataJSON());
-        Attestation attestation = parseAttestation(credential.getAttestationObject());
         log.info("challenge : {}", clientData.challenge);
         log.info("origin : {}", clientData.origin);
         log.info("crossOrigin : {}", clientData.crossOrigin);
         log.info("credential type : {}", clientData.type);
         log.info("signature : {}", attestation.attStmt.getSig());
         log.info("algorithm : {}", attestation.attStmt.getAlg());
+        log.info("x5c : {}", attestation.attStmt.getX5c());
         log.info("fmt : {}", attestation.fmt);
         log.info("authData : {}", attestation.authData);
         return true;
@@ -123,6 +120,7 @@ public class WebAuthnService {
     }
 
     private Attestation parseAttestation(String base64EncodedCborAttestation) throws IOException {
+        log.info("attestation : {}", base64EncodedCborAttestation);
         return objMapper.readValue(stringifyCBOR(base64EncodedCborAttestation), new TypeReference<>() {
         });
     }

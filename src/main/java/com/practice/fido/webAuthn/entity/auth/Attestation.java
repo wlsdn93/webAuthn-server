@@ -12,11 +12,14 @@ public class Attestation implements Serializable  {
     public class AttestationStatement implements Serializable {
         Integer alg;
         String sig;
+
+        String x5c;
         public Integer getAlg() {
             return alg;
         }
         public String getSig() {
             return sig;
         }
+        public String getX5c() { return x5c; }
     }
 }
