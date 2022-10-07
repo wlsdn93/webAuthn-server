@@ -11,20 +11,11 @@ import java.util.List;
 
 @Getter
 public class PubKeyCredCreatingOptions {
-
-    /**
-     * challenge
-     * rp
-     * user
-     * pubKeyCredParams
-     * timeout
-     * attestation
-     */
-    private String challenge;
-    private RelyingParty rp;
-    private UserInfo user;
-    private List<PubKeyCredParams> pubKeyCredParams;
-    private AuthenticatorSelection authenticatorSelection;
+    private final String challenge;
+    private final RelyingParty rp;
+    private final UserInfo user;
+    private final List<PubKeyCredParams> pubKeyCredParams;
+    private final AuthenticatorSelection authenticatorSelection;
     private final Integer timeout = 60000;
     private final String attestation = "direct";
 

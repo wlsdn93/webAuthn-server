@@ -16,8 +16,7 @@ import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.security.*;
 import java.security.spec.*;
-import java.util.Arrays;
-import java.util.Base64;
+import java.util.*;
 
 public class WebAuthnServiceTest {
 
@@ -35,23 +34,26 @@ public class WebAuthnServiceTest {
         byte[] publicKeyObjectFromAuthData = Arrays.copyOfRange(decodedAuthData, 55 + idLen, decodedAuthData.length);
 
         // get publicKey from Authenticator Data
-        PublicKey pubKey = getPublicKey(publicKeyObjectFromAuthData);
+        PublicKey pubKey = getECPublicKey(publicKeyObjectFromAuthData);
+        byte[] encoded = pubKey.getEncoded();
+        String format = pubKey.getFormat();
+        System.out.println("encoded pubKey" + Arrays.toString(encoded));
+        System.out.println("pubKey format" + format);
 
         // generate clientDataHash
         String mockClientDataJson = "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiZUZkUlozQnRSMkpoVHpSb2JrRklVbFZtTm1aZlJHRmZia2xWIiwib3JpZ2luIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgxIiwiY3Jvc3NPcmlnaW4iOmZhbHNlfQ==";
         byte[] clientDataHash = hash("SHA-256", mockClientDataJson);
 
-
         // make a message to verify the signature with alg
         byte[] message = getMessage(decodedAuthData, clientDataHash);
 
         // verify the signature
+        // SHA256withRSA
         Signature signature = Signature.getInstance("SHA256withECDSA", "SunEC");
         signature.initVerify(pubKey);
         signature.update(message);
         boolean verify = signature.verify(decodedSignature);
         System.out.println("verify = " + verify);
-
     }
 
     private static byte[] getMessage(byte[] decodedAuthData, byte[] clientDataHash) {
@@ -61,18 +63,19 @@ public class WebAuthnServiceTest {
                 .array();
     }
 
-    private static PublicKey getPublicKey(byte[] publicKeyObject) throws IOException, NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException {
-        PublicKeyJson publicKeyJson = new ObjectMapper().readValue(stringifyCBOR(publicKeyObject), new TypeReference<>() {});
+    private static PublicKey getECPublicKey(byte[] publicKeyObject) throws IOException, NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException {
+        EcPublicKeyJson publicKeyJson = new ObjectMapper().readValue(stringifyCBOR(publicKeyObject), new TypeReference<>() {});
         byte[] minus2 = decoder.decode(publicKeyJson.xCoordinate);
         byte[] minus3 = decoder.decode(publicKeyJson.yCoordinate);
 
         BigInteger x = new BigInteger(1, minus2);
         BigInteger y = new BigInteger(1, minus3);
 
-        ECPoint ecPoint = new ECPoint(x, y);
-        ECGenParameterSpec parameterSpec = new ECGenParameterSpec("secp256r1");
         AlgorithmParameters parameters = AlgorithmParameters.getInstance("EC");
+        ECGenParameterSpec parameterSpec = new ECGenParameterSpec("secp256r1");
         parameters.init(parameterSpec);
+
+        ECPoint ecPoint = new ECPoint(x, y);
         ECParameterSpec ecParameterSpec = parameters.getParameterSpec(ECParameterSpec.class);
         ECPublicKeySpec publicKeySpec = new ECPublicKeySpec(ecPoint, ecParameterSpec);
         KeyFactory keyFactory = KeyFactory.getInstance("EC");
@@ -99,7 +102,7 @@ public class WebAuthnServiceTest {
         return stringWriter.toString();
     }
 
-    static class PublicKeyJson {
+    static class EcPublicKeyJson {
         @JsonProperty("1")
         String keyType;
         @JsonProperty("3")

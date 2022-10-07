@@ -57,8 +57,7 @@ public class WebAuthnService {
     public String getChallenge() {
         byte[] buffer = new byte[20];
         random.nextBytes(buffer);
-        String challenge = encoder.encodeToString(buffer);
-        return challenge;
+        return encoder.encodeToString(buffer);
     }
 
     public PubKeyCredCreatingOptions getCredentialOptions() {
