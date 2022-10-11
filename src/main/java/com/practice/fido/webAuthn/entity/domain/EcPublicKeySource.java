@@ -1,13 +1,11 @@
 package com.practice.fido.webAuthn.entity.domain;
 
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.Id;
+import javax.persistence.*;
 
 @Entity
 public class EcPublicKeySource {
 
-    @Id
+    @Id @GeneratedValue(strategy = GenerationType.AUTO)
     @Column(name = "PUBLIC_KEY_ID")
     private String publicKeyId;
 
@@ -28,5 +26,7 @@ public class EcPublicKeySource {
 
     @Column(name = "Y_COORDINATE")
     private String yCoordinate;
+
+
 
 }

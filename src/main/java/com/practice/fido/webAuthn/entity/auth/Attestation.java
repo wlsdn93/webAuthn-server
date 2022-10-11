@@ -9,12 +9,12 @@ public class Attestation implements Serializable  {
     public String fmt;
     public AttestationStatement attStmt;
     public String authData;
-    public class AttestationStatement implements Serializable {
-        Integer alg;
+    public static class AttestationStatement implements Serializable {
+        String alg;
         String sig;
 
         String x5c;
-        public Integer getAlg() {
+        public String getAlg() {
             return alg;
         }
         public String getSig() {
