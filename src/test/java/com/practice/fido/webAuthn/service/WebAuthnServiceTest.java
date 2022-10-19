@@ -29,32 +29,33 @@ public class WebAuthnServiceTest {
     @Test
     @DisplayName("JSON 파싱 확인하기")
     public void parseAttestationObject() throws IOException, NoSuchAlgorithmException, NoSuchProviderException, InvalidParameterSpecException, InvalidKeySpecException, InvalidKeyException, SignatureException {
-        final String mockSignature = "MEUCIQDL4GqDMhphN0clc7lVV87KG0CpstF/uEakF8n1Shln1QIgbMwnGqhbW1YDxofp4UrhPU3x+WX2Sc6XnGaUu6qb3hI=";
-        final String mockAuthData = "SZYN5YgOjGh0NBcPZHZgW4/krrmihjLHmVzzuoMdl2NFAAAAAK3OAAI1vMYKZIsLJfHwVQMALQr6E/bsTVnj2wDNeBSjfaQsfNF93xqo6nkZoel1CW5ZjxdzAoOiL9UTgxfdPaUBAgMmIAEhWCDH7Ugz3uf/f5ghXaaVDIM/s9eARc/E86/ukagnsSoqSCJYIBGMhZ/Z0v1BrG6S9opII2DW5hWOkWo7Aw8xaLjNenyT";
-        byte[] decodedSignature = decoder.decode(mockSignature);
-        byte[] decodedAuthData = decoder.decode(mockAuthData);
+        final String base64Signature = "MEUCIQDL4GqDMhphN0clc7lVV87KG0CpstF/uEakF8n1Shln1QIgbMwnGqhbW1YDxofp4UrhPU3x+WX2Sc6XnGaUu6qb3hI=";
+        final String base64AuthData = "SZYN5YgOjGh0NBcPZHZgW4/krrmihjLHmVzzuoMdl2NFAAAAAK3OAAI1vMYKZIsLJfHwVQMALQr6E/bsTVnj2wDNeBSjfaQsfNF93xqo6nkZoel1CW5ZjxdzAoOiL9UTgxfdPaUBAgMmIAEhWCDH7Ugz3uf/f5ghXaaVDIM/s9eARc/E86/ukagnsSoqSCJYIBGMhZ/Z0v1BrG6S9opII2DW5hWOkWo7Aw8xaLjNenyT";
+        byte[] signatureFromClient = decoder.decode(base64Signature);
+        byte[] AuthenticatorData = decoder.decode(base64AuthData);
 
-        byte[] idLenBytes = Arrays.copyOfRange(decodedAuthData, 53, 55);
+        byte[] idLenBytes = Arrays.copyOfRange(AuthenticatorData, 53, 55);
         int idLen = Integer.parseInt(new BigInteger(idLenBytes).toString(16), 16);
-        byte[] publicKeyObjectFromAuthData = Arrays.copyOfRange(decodedAuthData, 55 + idLen, decodedAuthData.length);
+        byte[] pubKeyCBOR = Arrays.copyOfRange(AuthenticatorData, 55 + idLen, AuthenticatorData.length);
 
         // get publicKey from Authenticator Data
-        EcPublicKeySource keySource = getKeySource(publicKeyObjectFromAuthData, "testId");
-        PublicKey pubKey = getEcPublicKey(keySource);
+        EcPublicKeyObject ecPublicKeyObject = parseEncodedPublicKey(pubKeyCBOR);
+        EcPublicKeySource keySource = getKeySource(ecPublicKeyObject, "testId");
 
         // generate clientDataHash
-        String mockClientDataJson = "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiZUZkUlozQnRSMkpoVHpSb2JrRklVbFZtTm1aZlJHRmZia2xWIiwib3JpZ2luIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgxIiwiY3Jvc3NPcmlnaW4iOmZhbHNlfQ==";
-        byte[] clientDataHash = hash("SHA-256", mockClientDataJson);
+        String base64ClientDataJSON = "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiZUZkUlozQnRSMkpoVHpSb2JrRklVbFZtTm1aZlJHRmZia2xWIiwib3JpZ2luIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgxIiwiY3Jvc3NPcmlnaW4iOmZhbHNlfQ==";
+        byte[] clientDataHash = hash("SHA-256", base64ClientDataJSON);
 
         // make a message to verify the signature with alg
-        byte[] message = getMessage(decodedAuthData, clientDataHash);
+        byte[] message = getMessage(AuthenticatorData, clientDataHash);
 
         // verify the signature
         // SHA256withRSA
-        Signature signature = Signature.getInstance("SHA256withECDSA", "SunEC");
+        PublicKey pubKey = getEcPublicKey(keySource);
+        Signature signature = getECDSA(ecPublicKeyObject);
         signature.initVerify(pubKey);
         signature.update(message);
-        boolean verified = signature.verify(decodedSignature);
+        boolean verified = signature.verify(signatureFromClient);
         System.out.println("verify = " + verified);
         if(verified) {
             System.out.println("SAVE KEYSOURCE");
@@ -85,8 +86,8 @@ public class WebAuthnServiceTest {
     // x, y 는 x.toString(16) 해서  DB 에 저장..
     // 다시 꺼내오면 .. new BigInteger(hexString, 16) 하면 됨
     //
-    private static EcPublicKeySource getKeySource(byte[] publicKeyObject, String userId) throws IOException, NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException {
-        EcPublicKeyJson publicKeyJson = new ObjectMapper().readValue(stringifyCBOR(publicKeyObject), new TypeReference<>() {});
+    private static EcPublicKeySource getKeySource(EcPublicKeyObject publicKeyJson, String userId) throws IOException, NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException {
+        String standardName = getStandardNameOfCurveType(publicKeyJson);
         byte[] minus2 = decoder.decode(publicKeyJson.xCoordinate);
         byte[] minus3 = decoder.decode(publicKeyJson.yCoordinate);
 
@@ -98,10 +99,55 @@ public class WebAuthnServiceTest {
                 .userId(userId)
                 .xCoordinate(x)
                 .yCoordinate(y)
-                .algorithm("EC")
-                .standardName("secp256r1")
+                .standardName(standardName)
                 .build();
     }
+
+    private static EcPublicKeyObject parseEncodedPublicKey(byte[] pubKeyCBOR) throws IOException {
+        EcPublicKeyObject ecPublicKeyObject = new ObjectMapper().readValue(stringifyCBOR(pubKeyCBOR), new TypeReference<>() {});
+        return ecPublicKeyObject;
+    }
+
+    /**
+     * NIST P-256 also known as secp256r1
+     * NIST P-384 also known as secp384r1
+     * NIST P-521 also known as secp521r1
+     * reference from RFC8152 SECTION 13.1
+     */
+    private static String getStandardNameOfCurveType(EcPublicKeyObject ecPublicKeyObject) {
+        switch (ecPublicKeyObject.curveType) {
+            case "1" : return "secp256r1";
+            case "2" : return "secp384r1";
+            case "3" : return "secp521r1";
+        }
+        throw new IllegalArgumentException("not supported curve type");
+    }
+
+    /**
+     * ES256 : ECDSA w/ SHA-256
+     * ES384 : ECDSA w/ SHA-384
+     * ES512 : ECDSA w/ SHA-512
+     * reference from
+     * 1. RFC8152 SECTION 8.1
+     * 2. https://docs.oracle.com/javase/7/docs/technotes/guides/security/SunProviders.html#SunEC
+     */
+    private static Signature getECDSA(EcPublicKeyObject ecPublicKeyObject) throws NoSuchAlgorithmException, NoSuchProviderException {
+        switch (ecPublicKeyObject.alg) {
+            case "-7" : return Signature.getInstance("SHA256withECDSA", "SunEC");
+            case "-35" : return Signature.getInstance("SHA384withECDSA", "SunEC");
+            case "-36" : return Signature.getInstance("SHA512withECDSA", "SunEC");
+        }
+        throw new IllegalArgumentException("not supported alg");
+    }
+
+    private static String getKeyType(EcPublicKeyObject ecPublicKeyObject) {
+        switch (ecPublicKeyObject.keyType) {
+            case "2" : return "EC";
+            case "3" : return "RSA";
+        }
+        throw new IllegalArgumentException("not supported key type");
+    }
+
     private static byte[] getMessage(byte[] decodedAuthData, byte[] clientDataHash) {
         return ByteBuffer.allocate(decodedAuthData.length + clientDataHash.length)
                 .put(decodedAuthData)
@@ -128,7 +174,7 @@ public class WebAuthnServiceTest {
         return stringWriter.toString();
     }
 
-    static class EcPublicKeyJson {
+    static class EcPublicKeyObject {
         @JsonProperty("1")
         String keyType;
         @JsonProperty("3")

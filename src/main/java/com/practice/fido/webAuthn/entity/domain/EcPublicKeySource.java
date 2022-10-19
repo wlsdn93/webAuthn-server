@@ -21,7 +21,7 @@ public class EcPublicKeySource {
     private String userId;
 
     @Column(name = "ALGORITHM")
-    private String algorithm;
+    private final String algorithm = "EC";
 
     @Column(name = "STANDARD_NAME")
     private String standardName;
@@ -33,9 +33,8 @@ public class EcPublicKeySource {
     private String yCoordinate;
 
     @Builder
-    public EcPublicKeySource(String userId, String algorithm, String standardName, String xCoordinate, String yCoordinate) {
+    public EcPublicKeySource(String userId, String standardName, String xCoordinate, String yCoordinate) {
         this.userId = userId;
-        this.algorithm = algorithm;
         this.standardName = standardName;
         this.xCoordinate = xCoordinate;
         this.yCoordinate = yCoordinate;

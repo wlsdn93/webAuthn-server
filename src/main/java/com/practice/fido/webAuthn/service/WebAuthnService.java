@@ -64,10 +64,13 @@ public class WebAuthnService {
         String rpId = "localhost";
         RelyingParty rp = new RelyingParty(rpName, rpId);
 
-        String userId = "g-BuqvgcZ2VAhx_QAm7KSw";
-        User user = userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("존해하지 않는 사용자"));
-        String name = user.getUsername();
-        String displayName = user.getDisplayName();
+//        String userId = "g-BuqvgcZ2VAhx_QAm7KSw";
+//        User user = userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("존해하지 않는 사용자"));
+//        String name = user.getUsername();
+//        String displayName = user.getDisplayName();
+        String userId = "BuqvgcZ2VAhx_QAm7KSw";
+        String name = "test";
+        String displayName = "dokke";
         UserInfo userInfo = new UserInfo(userId, name, displayName);
 
         //pubKeyCredParams
