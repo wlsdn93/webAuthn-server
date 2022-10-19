@@ -119,6 +119,7 @@ public class WebAuthnService {
             byte[] clientDataHash = hash("SHA-256", credential.getClientDataJSON());
             byte[] message = getMessage(authData, clientDataHash);
             PublicKey pubKey = getECPublicKey(publicKeyJson);
+
             String base64EncodedSignature = attestation.attStmt.getSig();
             byte[] signature = decoder.decode(base64EncodedSignature);
 

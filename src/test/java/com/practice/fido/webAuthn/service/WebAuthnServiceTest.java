@@ -7,8 +7,11 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.cbor.CBORFactory;
 import com.fasterxml.jackson.dataformat.cbor.CBORParser;
+import com.practice.fido.webAuthn.entity.domain.EcPublicKeySource;
+import com.practice.fido.webAuthn.repository.EcPubKeySourceRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.io.IOException;
 import java.io.StringWriter;
@@ -20,6 +23,8 @@ import java.util.*;
 
 public class WebAuthnServiceTest {
 
+    @Autowired
+    EcPubKeySourceRepository keySourceRepository;
     static Base64.Decoder decoder = Base64.getDecoder();
     @Test
     @DisplayName("JSON 파싱 확인하기")
@@ -34,11 +39,8 @@ public class WebAuthnServiceTest {
         byte[] publicKeyObjectFromAuthData = Arrays.copyOfRange(decodedAuthData, 55 + idLen, decodedAuthData.length);
 
         // get publicKey from Authenticator Data
-        PublicKey pubKey = getECPublicKey(publicKeyObjectFromAuthData);
-        byte[] encoded = pubKey.getEncoded();
-        String format = pubKey.getFormat();
-        System.out.println("encoded pubKey" + Arrays.toString(encoded));
-        System.out.println("pubKey format" + format);
+        EcPublicKeySource keySource = getKeySource(publicKeyObjectFromAuthData, "testId");
+        PublicKey pubKey = getEcPublicKey(keySource);
 
         // generate clientDataHash
         String mockClientDataJson = "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiZUZkUlozQnRSMkpoVHpSb2JrRklVbFZtTm1aZlJHRmZia2xWIiwib3JpZ2luIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgxIiwiY3Jvc3NPcmlnaW4iOmZhbHNlfQ==";
@@ -52,36 +54,60 @@ public class WebAuthnServiceTest {
         Signature signature = Signature.getInstance("SHA256withECDSA", "SunEC");
         signature.initVerify(pubKey);
         signature.update(message);
-        boolean verify = signature.verify(decodedSignature);
-        System.out.println("verify = " + verify);
+        boolean verified = signature.verify(decodedSignature);
+        System.out.println("verify = " + verified);
+        if(verified) {
+            System.out.println("SAVE KEYSOURCE");
+//            keySourceRepository.save(keySource);
+            // return jwt or something
+        } else {
+            System.err.println("THROW EXCEPTION");
+            // throw exception
+        }
     }
 
+    private PublicKey getEcPublicKey(EcPublicKeySource keySource) throws NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException {
+        AlgorithmParameters parameters = AlgorithmParameters.getInstance(keySource.getAlgorithm());
+        ECGenParameterSpec parameterSpec = new ECGenParameterSpec(keySource.getStandardName());
+        parameters.init(parameterSpec);
+
+        BigInteger x = new BigInteger(keySource.getXCoordinate(), 16);
+        BigInteger y = new BigInteger(keySource.getYCoordinate(), 16);
+        ECPoint ecPoint = new ECPoint(x, y);
+
+        ECParameterSpec ecParameterSpec = parameters.getParameterSpec(ECParameterSpec.class);
+        ECPublicKeySpec publicKeySpec = new ECPublicKeySpec(ecPoint, ecParameterSpec);
+        KeyFactory keyFactory = KeyFactory.getInstance(keySource.getAlgorithm());
+        return keyFactory.generatePublic(publicKeySpec);
+    }
+
+    // algorithm, standard_name, x, y
+    // x, y 는 x.toString(16) 해서  DB 에 저장..
+    // 다시 꺼내오면 .. new BigInteger(hexString, 16) 하면 됨
+    //
+    private static EcPublicKeySource getKeySource(byte[] publicKeyObject, String userId) throws IOException, NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException {
+        EcPublicKeyJson publicKeyJson = new ObjectMapper().readValue(stringifyCBOR(publicKeyObject), new TypeReference<>() {});
+        byte[] minus2 = decoder.decode(publicKeyJson.xCoordinate);
+        byte[] minus3 = decoder.decode(publicKeyJson.yCoordinate);
+
+        String x = new BigInteger(1, minus2).toString(16);
+        String y = new BigInteger(1, minus3).toString(16);
+
+        // standardName는 cvr 에서 가져와야함... cvr enum 필요..
+        return EcPublicKeySource.builder()
+                .userId(userId)
+                .xCoordinate(x)
+                .yCoordinate(y)
+                .algorithm("EC")
+                .standardName("secp256r1")
+                .build();
+    }
     private static byte[] getMessage(byte[] decodedAuthData, byte[] clientDataHash) {
         return ByteBuffer.allocate(decodedAuthData.length + clientDataHash.length)
                 .put(decodedAuthData)
                 .put(clientDataHash)
                 .array();
     }
-
-    private static PublicKey getECPublicKey(byte[] publicKeyObject) throws IOException, NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException {
-        EcPublicKeyJson publicKeyJson = new ObjectMapper().readValue(stringifyCBOR(publicKeyObject), new TypeReference<>() {});
-        byte[] minus2 = decoder.decode(publicKeyJson.xCoordinate);
-        byte[] minus3 = decoder.decode(publicKeyJson.yCoordinate);
-
-        BigInteger x = new BigInteger(1, minus2);
-        BigInteger y = new BigInteger(1, minus3);
-
-        AlgorithmParameters parameters = AlgorithmParameters.getInstance("EC");
-        ECGenParameterSpec parameterSpec = new ECGenParameterSpec("secp256r1");
-        parameters.init(parameterSpec);
-
-        ECPoint ecPoint = new ECPoint(x, y);
-        ECParameterSpec ecParameterSpec = parameters.getParameterSpec(ECParameterSpec.class);
-        ECPublicKeySpec publicKeySpec = new ECPublicKeySpec(ecPoint, ecParameterSpec);
-        KeyFactory keyFactory = KeyFactory.getInstance("EC");
-        return keyFactory.generatePublic(publicKeySpec);
-    }
-
     private static byte[] hash(String alg, String clientDataJson) throws NoSuchAlgorithmException {
         MessageDigest md = MessageDigest.getInstance(alg);
         md.update(decoder.decode(clientDataJson));

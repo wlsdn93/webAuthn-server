@@ -17,7 +17,10 @@ import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
 import java.io.StringWriter;
+import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
+import java.security.SignatureException;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.InvalidParameterSpecException;
 import java.util.Base64;
@@ -39,7 +42,7 @@ public class WebAuthnController {
     }
 
     @PostMapping("/credential/attestation")
-    public boolean attestCredential(@RequestBody PublicKeyCredential credential) throws IOException, NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException {
+    public boolean attestCredential(@RequestBody PublicKeyCredential credential) throws IOException, NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException, SignatureException, NoSuchProviderException, InvalidKeyException {
         return this.authService.attestPublicKeyCredential(credential);
     }
 
