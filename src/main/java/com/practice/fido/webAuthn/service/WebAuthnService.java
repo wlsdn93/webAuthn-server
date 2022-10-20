@@ -1,24 +1,22 @@
 package com.practice.fido.webAuthn.service;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.cbor.CBORFactory;
-import com.fasterxml.jackson.dataformat.cbor.CBORParser;
+import com.practice.fido.webAuthn.dto.ECPublicKeyVO;
 import com.practice.fido.webAuthn.dto.PubKeyCredCreatingOptions;
 import com.practice.fido.webAuthn.dto.PublicKeyCredential;
+import com.practice.fido.webAuthn.dto.RSAPublicKeyVO;
 import com.practice.fido.webAuthn.entity.auth.*;
+import com.practice.fido.webAuthn.entity.domain.PublicKeySource;
 import com.practice.fido.webAuthn.repository.ChallengeRepository;
+import com.practice.fido.webAuthn.repository.PublicKeySourceRepository;
 import com.practice.fido.webAuthn.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
-import java.io.StringWriter;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -28,6 +26,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
+
+import static com.practice.fido.webAuthn.entity.auth.AuthenticatorSelection.*;
+import static com.practice.fido.webAuthn.util.WebAuthnUtil.hash;
+import static com.practice.fido.webAuthn.util.WebAuthnUtil.stringifyCBOR;
 
 @Service
 @Slf4j
@@ -40,10 +42,14 @@ public class WebAuthnService {
     private static final ObjectMapper objMapper = new ObjectMapper();
     private final ChallengeRepository challengeRepository;
 
+    private final PublicKeySourceRepository keySourceRepository;
     private final UserRepository userRepository;
 
-    public WebAuthnService(ChallengeRepository challengeRepository, UserRepository userRepository) {
+    public WebAuthnService(ChallengeRepository challengeRepository,
+                           PublicKeySourceRepository keySourceRepository,
+                           UserRepository userRepository) {
         this.challengeRepository = challengeRepository;
+        this.keySourceRepository = keySourceRepository;
         this.userRepository = userRepository;
     }
 
@@ -78,9 +84,9 @@ public class WebAuthnService {
 
         //authenticationSelection
         AuthenticatorSelection authenticatorSelection =
-                new AuthenticatorSelection(AuthenticatorSelection.AuthenticatorAttachment.PLATFORM,
-                                            AuthenticatorSelection.UserVerification.PREFERRED,
-                                            AuthenticatorSelection.ResidentKey.PREFERRED,
+                new AuthenticatorSelection(AuthenticatorAttachment.PLATFORM,
+                                            UserVerification.PREFERRED,
+                                            ResidentKey.PREFERRED,
                             true);
 
         return PubKeyCredCreatingOptions.builder()
@@ -96,76 +102,99 @@ public class WebAuthnService {
         ClientData clientData = parseClientData(credential.getClientDataJSON());
         Attestation attestation = parseAttestation(credential.getAttestationObject());
         byte[] authData = decoder.decode(attestation.authData);
-
+        byte[] signatureFromClient = decoder.decode(attestation.attStmt.getSig());
         // client data 에서 origin, challenge, type 확인
-        challengeRepository.findById(clientData.challenge).orElseThrow(() -> new RuntimeException("유효하지 않는 챌린지"));
-        challengeRepository.deleteById(clientData.challenge);
+//        challengeRepository.findById(clientData.challenge).orElseThrow(() -> new RuntimeException("유효하지 않는 챌린지"));
+//        challengeRepository.deleteById(clientData.challenge);
 
-        boolean isValidOrigin = clientData.origin.equals("localhost:8081");
-        
+//        if (!clientData.origin.equals("localhost:8081")) {
+            log.info(clientData.origin);
+//            throw new IllegalArgumentException("NOT VALID ORIGIN");
+//        };
 
+        PublicKeySource publicKeySource = getPublicKeySource(authData);
         // if x5c not exist : self attestation
-
-        if(attestation.attStmt.getX5c().isBlank()) {
+        String x5c = attestation.attStmt.getX5c();
+        if(x5c.isBlank()) {
             // 1. authData.alg 와 attStmt.alg 가 같은지 비교
-            byte[] idLenBytes = Arrays.copyOfRange(authData, 53, 55);
-            int idLen = Integer.parseInt(new BigInteger(idLenBytes).toString(16), 16);
-            byte[] publicKeyObjectFromAuthData = Arrays.copyOfRange(authData, 55 + idLen, authData.length);
-            EcPublicKeyJson publicKeyJson = parsePublicKeyObject(publicKeyObjectFromAuthData);
-            if (!publicKeyJson.alg.equals(attestation.attStmt.getAlg())) {
-                throw new RuntimeException("Authenticator and Attestation Statement Algorithm doesn't match");
-            }
+//            EcPublicKeyJson publicKeyJson = parsePublicKeyObject(pubKeyCBOR);
+//            if (!publicKeyJson.alg.equals(attestation.attStmt.getAlg())) {
+//                throw new RuntimeException("Authenticator and Attestation Statement Algorithm doesn't match");
+//            }
 
             // 2. attStmt.sig 를 authData 와 clientData 그리고 public key 를 이용해서 검증
-            byte[] clientDataHash = hash("SHA-256", credential.getClientDataJSON());
+            byte[] clientDataHash = hash(credential.getClientDataJSON());
             byte[] message = getMessage(authData, clientDataHash);
-            PublicKey pubKey = getECPublicKey(publicKeyJson);
+            String keyType = publicKeySource.getKeyType();
 
-            String base64EncodedSignature = attestation.attStmt.getSig();
-            byte[] signature = decoder.decode(base64EncodedSignature);
-
-            boolean isValidSignature = verifySignature(signature, message, pubKey);
-
-            if(isValidSignature) {
-                // 1. public-key DB에 저장
-                // 2. jwt 발급 / refresh token 발급 ?
-                return true;
-            } else {
-                // 3. self attestation 을 했다는 것을 표현하는 정보를 검증 결과로 반환해야함
-                throw new RuntimeException("Failed to verify the signature");
+            // 3.
+            PublicKey publicKey = getPublicKey(publicKeySource);
+            Signature signature = null;
+            if(keyType.equals("EC")) {
+                signature = getECSignature(publicKeySource);
+            } else if(keyType.equals("RSA")) {
+                signature = getRSASignature(publicKeySource);
+            }
+            signature.initVerify(publicKey);
+            signature.update(message);
+            boolean verify = signature.verify(signatureFromClient);
+            if (verify) {
+                log.info("=== success ===");
+                log.info("SAVE KEY SOURCE");
+//                publicKeySource.setUserId(userId);
+//                keySourceRepository.save(publicKeySource);
+                log.info("return JWT");
             }
         } else {
+            log.info("=== fail ===");
             throw new RuntimeException("The server is only supporting self attestation for now");
         }
-    }
-    private boolean verifySignature(byte[] signature, byte[] message, PublicKey pubKey) throws NoSuchAlgorithmException, NoSuchProviderException, InvalidKeyException, SignatureException {
-        Signature signatureVerifier = Signature.getInstance("SHA256withECDSA", "SunEC");
-        signatureVerifier.initVerify(pubKey);
-        signatureVerifier.update(message);
-        return signatureVerifier.verify(signature);
+        return false;
     }
 
-    private PublicKey getECPublicKey(EcPublicKeyJson publicKeyJson) throws NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException {
+    private PublicKey getPublicKey(PublicKeySource publicKeySource) throws NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException {
+        switch (publicKeySource.getOne()) {
+            case "2" : {
+                ECPublicKeyVO ecPublicKeyVO = new ECPublicKeyVO(publicKeySource);
+                return getEcPublicKey(ecPublicKeyVO);
+            }
+            case "3" : {
+                RSAPublicKeyVO rsaPublicKeyVO = new RSAPublicKeyVO(publicKeySource);
+                return getRsaPublicKey(rsaPublicKeyVO);
+            }
+        }
+        throw new RuntimeException("test");
+    }
 
-        byte[] minus2 = decoder.decode(publicKeyJson.xCoordinate);
-        byte[] minus3 = decoder.decode(publicKeyJson.yCoordinate);
-
-        BigInteger x = new BigInteger(1, minus2);
-        BigInteger y = new BigInteger(1, minus3);
-
+    private PublicKey getEcPublicKey(ECPublicKeyVO ecPublicKeyVO) throws NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException {
         AlgorithmParameters parameters = AlgorithmParameters.getInstance("EC");
-        ECGenParameterSpec parameterSpec = new ECGenParameterSpec("secp256r1");
+        ECGenParameterSpec parameterSpec = new ECGenParameterSpec(ecPublicKeyVO.getStandardNameOfCurveType());
         parameters.init(parameterSpec);
 
+        BigInteger x = ecPublicKeyVO.getXCoordinate();
+        BigInteger y = ecPublicKeyVO.getYCoordinate();
         ECPoint ecPoint = new ECPoint(x, y);
+
         ECParameterSpec ecParameterSpec = parameters.getParameterSpec(ECParameterSpec.class);
         ECPublicKeySpec publicKeySpec = new ECPublicKeySpec(ecPoint, ecParameterSpec);
         KeyFactory keyFactory = KeyFactory.getInstance("EC");
         return keyFactory.generatePublic(publicKeySpec);
     }
 
-    private EcPublicKeyJson parsePublicKeyObject(byte[] publicKeyObject) throws IOException {
-        return new ObjectMapper().readValue(stringifyCBOR(publicKeyObject), new TypeReference<>() {});
+    private PublicKey getRsaPublicKey(RSAPublicKeyVO rsaPublicKeyVO) throws NoSuchAlgorithmException, InvalidKeySpecException {
+        BigInteger modulus = rsaPublicKeyVO.getModulus();
+        BigInteger exponent = rsaPublicKeyVO.getExponent();
+        RSAPublicKeySpec rsaPublicKeySpec = new RSAPublicKeySpec(modulus, exponent);
+        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+        return keyFactory.generatePublic(rsaPublicKeySpec);
+    }
+
+    private PublicKeySource getPublicKeySource(byte[] authData) throws IOException {
+        byte[] idLenBytes = Arrays.copyOfRange(authData, 53, 55);
+        int idLen = Integer.parseInt(new BigInteger(idLenBytes).toString(16), 16);
+        byte[] pubKeyCBOR = Arrays.copyOfRange(authData, 55 + idLen, authData.length);
+        PublicKeySource publicKeySource = new ObjectMapper().readValue(stringifyCBOR(pubKeyCBOR), new TypeReference<>() {});
+        return publicKeySource;
     }
 
     private byte[] getMessage(byte[] decodedAuthData, byte[] clientDataHash) {
@@ -189,39 +218,18 @@ public class WebAuthnService {
         });
     }
 
-    private static String stringifyCBOR(byte[] cbor) throws IOException {
-        CBORFactory cborFactory = new CBORFactory();
-        CBORParser parser = cborFactory.createParser(cbor);
-
-        JsonFactory jsonFactory = new JsonFactory();
-        StringWriter stringWriter = new StringWriter();
-        JsonGenerator jsonGenerator = jsonFactory.createGenerator(stringWriter);
-        while(parser.nextToken() != null) {
-            jsonGenerator.copyCurrentEvent(parser);
+    private static Signature getECSignature(PublicKeySource publicKeySource) throws NoSuchAlgorithmException, NoSuchProviderException {
+        if (publicKeySource.getThree().equals("-7")) {
+            return Signature.getInstance("SHA256withECDSA", "SunEC");
         }
-        jsonGenerator.flush();
-        return stringWriter.toString();
+        throw new IllegalArgumentException("not supported alg");
     }
 
-    private static byte[] hash(String alg, String clientDataJson) throws NoSuchAlgorithmException {
-        MessageDigest md = MessageDigest.getInstance(alg);
-        md.update(decoder.decode(clientDataJson));
-        return md.digest();
+    private static Signature getRSASignature(PublicKeySource publicKeySource) throws NoSuchAlgorithmException, NoSuchProviderException {
+        if (publicKeySource.getThree().equals("-37")) {
+            return Signature.getInstance("SHA256withRSA/PSS", "SunRsaSign");
+        }
+        throw new IllegalArgumentException("not supported alg");
     }
-
-    static class EcPublicKeyJson {
-        @JsonProperty("1")
-        String keyType;
-        @JsonProperty("3")
-        String alg;
-        @JsonProperty("-1")
-        String curveType;
-        @JsonProperty("-2")
-        String xCoordinate;
-        @JsonProperty("-3")
-        String yCoordinate;
-
-    }
-
 
 }

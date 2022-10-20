@@ -20,6 +20,6 @@ public class Attestation implements Serializable  {
         public String getSig() {
             return sig;
         }
-        public String getX5c() { return x5c; }
+        public String getX5c() { return x5c == null ? "" : x5c; }
     }
 }

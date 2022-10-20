@@ -60,4 +60,12 @@ public class PublicKeySource {
     public void setUserId(String userId) {
         this.userId = userId;
     }
+
+    public String getKeyType() {
+        switch (one) {
+            case "2" : return "EC";
+            case "3" : return "RSA";
+        }
+        throw new RuntimeException("지원하지 않는 키타입");
+    }
 }

@@ -67,7 +67,7 @@ public class WebAuthnServiceTest {
         }
     }
 
-    private static String getKeyType(byte[] pubKeyCBOR) throws IOException {
+    private String getKeyType(byte[] pubKeyCBOR) throws IOException {
         String pubKeyString = stringifyCBOR(pubKeyCBOR);
         if (pubKeyString.contains("\"1\":2")) {
             return "EC";
