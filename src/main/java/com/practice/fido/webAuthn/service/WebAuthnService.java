@@ -11,8 +11,6 @@ import com.fasterxml.jackson.dataformat.cbor.CBORParser;
 import com.practice.fido.webAuthn.dto.PubKeyCredCreatingOptions;
 import com.practice.fido.webAuthn.dto.PublicKeyCredential;
 import com.practice.fido.webAuthn.entity.auth.*;
-import com.practice.fido.webAuthn.entity.domain.EcPublicKeySource;
-import com.practice.fido.webAuthn.entity.domain.User;
 import com.practice.fido.webAuthn.repository.ChallengeRepository;
 import com.practice.fido.webAuthn.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
