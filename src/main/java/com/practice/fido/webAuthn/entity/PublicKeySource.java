@@ -1,4 +1,4 @@
-package com.practice.fido.webAuthn.entity.domain;
+package com.practice.fido.webAuthn.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -19,10 +19,9 @@ import javax.persistence.*;
 public class PublicKeySource {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
-    @Column(name = "KEY_ID")
+    @Column(name = "CREDENTIAL_ID")
     @JsonIgnore
-    private String publicKeyId;
+    private String credentialId;
     @Column(name = "USER_ID")
     @JsonIgnore
     private String userId;
@@ -47,18 +46,12 @@ public class PublicKeySource {
     @Column(name = "MINUS_THREE")
     private String minusThree;
 
-    @Builder
-    public PublicKeySource(String userId, String one, String three, String minusOne, String minusTwo, String minusThree) {
-        this.userId = userId;
-        this.one = one;
-        this.three = three;
-        this.minusOne = minusOne;
-        this.minusTwo = minusTwo;
-        this.minusThree = minusThree;
-    }
-
     public void setUserId(String userId) {
         this.userId = userId;
+    }
+
+    public void setCredentialId(String credentialId) {
+        this.credentialId = credentialId;
     }
 
     public String getKeyType() {

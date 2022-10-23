@@ -1,9 +1,5 @@
-package com.practice.fido.webAuthn.dto;
+package com.practice.fido.webAuthn.dto.registration;
 
-import com.practice.fido.webAuthn.entity.auth.AuthenticatorSelection;
-import com.practice.fido.webAuthn.entity.auth.PubKeyCredParams;
-import com.practice.fido.webAuthn.entity.auth.RelyingParty;
-import com.practice.fido.webAuthn.entity.auth.UserInfo;
 import lombok.Builder;
 import lombok.Getter;
 

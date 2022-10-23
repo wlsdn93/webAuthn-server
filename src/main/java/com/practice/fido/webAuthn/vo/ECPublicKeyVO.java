@@ -1,6 +1,6 @@
-package com.practice.fido.webAuthn.dto;
+package com.practice.fido.webAuthn.vo;
 
-import com.practice.fido.webAuthn.entity.domain.PublicKeySource;
+import com.practice.fido.webAuthn.entity.PublicKeySource;
 import lombok.Getter;
 
 import java.math.BigInteger;

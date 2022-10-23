@@ -1,4 +1,4 @@
-package com.practice.fido.webAuthn.entity.auth;
+package com.practice.fido.webAuthn.dto.registration;
 
 import lombok.Getter;
 

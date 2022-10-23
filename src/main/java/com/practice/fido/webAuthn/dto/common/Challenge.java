@@ -1,4 +1,4 @@
-package com.practice.fido.webAuthn.entity.auth;
+package com.practice.fido.webAuthn.dto.common;
 
 import lombok.NoArgsConstructor;
 
@@ -21,4 +21,8 @@ public class Challenge {
         this.challenge = challenge;
     }
 
+    @Override
+    public String toString() {
+        return challenge;
+    }
 }

@@ -1,7 +1,7 @@
 package com.practice.fido.webAuthn.service;
 
 import com.practice.fido.webAuthn.dto.EnrollRequestDto;
-import com.practice.fido.webAuthn.entity.domain.User;
+import com.practice.fido.webAuthn.entity.User;
 import com.practice.fido.webAuthn.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

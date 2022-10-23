@@ -1,14 +1,17 @@
 package com.practice.fido.webAuthn.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.practice.fido.webAuthn.dto.ECPublicKeyVO;
-import com.practice.fido.webAuthn.dto.PubKeyCredCreatingOptions;
-import com.practice.fido.webAuthn.dto.PublicKeyCredential;
-import com.practice.fido.webAuthn.dto.RSAPublicKeyVO;
-import com.practice.fido.webAuthn.entity.auth.*;
-import com.practice.fido.webAuthn.entity.domain.PublicKeySource;
+import com.practice.fido.webAuthn.dto.AuthenticationPublicKeyCredential;
+import com.practice.fido.webAuthn.dto.authentication.AllowCredential;
+import com.practice.fido.webAuthn.dto.authentication.PublicKeyCredRequestOptions;
+import com.practice.fido.webAuthn.dto.common.*;
+import com.practice.fido.webAuthn.dto.registration.*;
+import com.practice.fido.webAuthn.vo.ECPublicKeyVO;
+import com.practice.fido.webAuthn.dto.registration.PubKeyCredCreatingOptions;
+import com.practice.fido.webAuthn.dto.RegistrationPublicKeyCredential;
+import com.practice.fido.webAuthn.vo.RSAPublicKeyVO;
+import com.practice.fido.webAuthn.entity.PublicKeySource;
 import com.practice.fido.webAuthn.repository.ChallengeRepository;
 import com.practice.fido.webAuthn.repository.PublicKeySourceRepository;
 import com.practice.fido.webAuthn.repository.UserRepository;
@@ -19,29 +22,22 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.security.spec.*;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.List;
 
-import static com.practice.fido.webAuthn.entity.auth.AuthenticatorSelection.*;
-import static com.practice.fido.webAuthn.util.WebAuthnUtil.hash;
-import static com.practice.fido.webAuthn.util.WebAuthnUtil.stringifyCBOR;
+import static com.practice.fido.webAuthn.dto.authentication.AllowCredential.*;
+import static com.practice.fido.webAuthn.dto.registration.AuthenticatorSelection.*;
+import static com.practice.fido.webAuthn.util.WebAuthnUtil.*;
 
 @Service
 @Slf4j
 @Transactional
 public class WebAuthnService {
 
-    private static final SecureRandom random = new SecureRandom();
-    private static final Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
-    private static final Base64.Decoder decoder = Base64.getDecoder();
-    private static final ObjectMapper objMapper = new ObjectMapper();
     private final ChallengeRepository challengeRepository;
-
     private final PublicKeySourceRepository keySourceRepository;
     private final UserRepository userRepository;
 
@@ -53,27 +49,40 @@ public class WebAuthnService {
         this.userRepository = userRepository;
     }
 
-    public String getChallenge() {
-        byte[] buffer = new byte[20];
-        random.nextBytes(buffer);
-        return encoder.encodeToString(buffer);
+    public PublicKeyCredRequestOptions getCredentialRequestOptions() {
+        PublicKeySource publicKeySource = keySourceRepository
+                .findByUserId("BuqvgcZ2VAhx_QAm7KSw")
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 키"));
+        publicKeySource.getCredentialId();
+        // credential 마다 allow transport 를 따로 해야하나?
+        List<AuthenticatorTransport> transports = List.of(new AuthenticatorTransport[]{AuthenticatorTransport.INTERNAL});
+        Challenge challenge = generateChallenge();
+        AllowCredential allowCredential = new AllowCredential(publicKeySource.getCredentialId(), transports);
+        List<AllowCredential> allowCredentials = List.of(new AllowCredential[]{allowCredential});
+        return PublicKeyCredRequestOptions.builder()
+                .allowCredentials(allowCredentials)
+                .challenge(challenge.toString())
+                .userVerification("preferred")
+                .rpId("localhost")
+                .build();
     }
 
-    public PubKeyCredCreatingOptions getCredentialOptions() {
+    public PubKeyCredCreatingOptions getCredentialCreatingOptions() {
         //challenge
-        String challenge = getChallenge();
-
+        Challenge challenge = generateChallenge();
+        log.info("issued challenge : {}", challenge);
+        challengeRepository.save(challenge);
         //rp
         String rpName = "x8byte security";
         String rpId = "localhost";
         RelyingParty rp = new RelyingParty(rpName, rpId);
 
 //        String userId = "g-BuqvgcZ2VAhx_QAm7KSw";
-//        User user = userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("존해하지 않는 사용자"));
+//        User user = userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자"));
 //        String name = user.getUsername();
 //        String displayName = user.getDisplayName();
         String userId = "BuqvgcZ2VAhx_QAm7KSw";
-        String name = "test";
+        String name = "dokke";
         String displayName = "dokke";
         UserInfo userInfo = new UserInfo(userId, name, displayName);
 
@@ -90,37 +99,41 @@ public class WebAuthnService {
                             true);
 
         return PubKeyCredCreatingOptions.builder()
-                .challenge(challenge)
+                .challenge(challenge.toString())
                 .relyingParty(rp)
                 .user(userInfo)
                 .pubKeyCredParams(pubKeyCredParams)
                 .authenticatorSelection(authenticatorSelection)
                 .build();
     }
-    public boolean attestPublicKeyCredential(PublicKeyCredential credential) throws IOException, NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException, NoSuchProviderException, InvalidKeyException, SignatureException {
+    public boolean attestPublicKeyCredential(RegistrationPublicKeyCredential credential) throws IOException, NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException, NoSuchProviderException, InvalidKeyException, SignatureException {
+
+
         // parse credential to get clientData & attestationObject
         ClientData clientData = parseClientData(credential.getClientDataJSON());
         Attestation attestation = parseAttestation(credential.getAttestationObject());
-        byte[] authData = decoder.decode(attestation.authData);
-        byte[] signatureFromClient = decoder.decode(attestation.attStmt.getSig());
-        // client data 에서 origin, challenge, type 확인
-//        challengeRepository.findById(clientData.challenge).orElseThrow(() -> new RuntimeException("유효하지 않는 챌린지"));
-//        challengeRepository.deleteById(clientData.challenge);
+        byte[] authData = decodeBase64(attestation.authData);
+        if (attestation.fmt.equals("none")) {
+            PublicKeySource publicKeySource = getPublicKeySource(authData);
+            publicKeySource.setCredentialId(credential.getId());
+            publicKeySource.setUserId("BuqvgcZ2VAhx_QAm7KSw");
+            keySourceRepository.save(publicKeySource);
+            return true;
+        }
+        byte[] signatureFromClient = decodeBase64(attestation.attStmt.getSig());
 
-//        if (!clientData.origin.equals("localhost:8081")) {
-            log.info(clientData.origin);
-//            throw new IllegalArgumentException("NOT VALID ORIGIN");
-//        };
+        doClientDataValidation(clientData);
 
         PublicKeySource publicKeySource = getPublicKeySource(authData);
         // if x5c not exist : self attestation
         String x5c = attestation.attStmt.getX5c();
         if(x5c.isBlank()) {
             // 1. authData.alg 와 attStmt.alg 가 같은지 비교
-//            EcPublicKeyJson publicKeyJson = parsePublicKeyObject(pubKeyCBOR);
-//            if (!publicKeyJson.alg.equals(attestation.attStmt.getAlg())) {
-//                throw new RuntimeException("Authenticator and Attestation Statement Algorithm doesn't match");
-//            }
+            String authDataAlg = publicKeySource.getThree();
+            String attStmtAlg = attestation.attStmt.getAlg();
+            if (!authDataAlg.equals(attStmtAlg)) {
+                throw new RuntimeException("Alg not match");
+            }
 
             // 2. attStmt.sig 를 authData 와 clientData 그리고 public key 를 이용해서 검증
             byte[] clientDataHash = hash(credential.getClientDataJSON());
@@ -140,16 +153,30 @@ public class WebAuthnService {
             boolean verify = signature.verify(signatureFromClient);
             if (verify) {
                 log.info("=== success ===");
-                log.info("SAVE KEY SOURCE");
-//                publicKeySource.setUserId(userId);
-//                keySourceRepository.save(publicKeySource);
-                log.info("return JWT");
+                publicKeySource.setCredentialId(credential.getId());
+                publicKeySource.setUserId("BuqvgcZ2VAhx_QAm7KSw");
+                keySourceRepository.save(publicKeySource);
             }
         } else {
             log.info("=== fail ===");
-            throw new RuntimeException("The server is only supporting self attestation for now");
+            throw new RuntimeException("self attestation 만 지원하고 있음");
         }
         return false;
+    }
+
+    // client data 에서 origin, challenge, type 확인
+    private void doClientDataValidation(ClientData clientData) {
+        if(!clientData.origin.equals("http://localhost:8081")) {
+            throw new RuntimeException("허용하지 않는 오리진");
+        }
+
+        if (!clientData.type.equals("webauthn.create")) {
+            throw new RuntimeException("요청타입이 webauthn.create 이 아님");
+        }
+
+        String challenge = clientData.getChallenge();
+        challengeRepository.findById(challenge).orElseThrow(() -> new RuntimeException("유효하지 않은 챌린지"));
+        challengeRepository.deleteById(challenge);
     }
 
     private PublicKey getPublicKey(PublicKeySource publicKeySource) throws NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException {
@@ -163,7 +190,7 @@ public class WebAuthnService {
                 return getRsaPublicKey(rsaPublicKeyVO);
             }
         }
-        throw new RuntimeException("test");
+        throw new RuntimeException("EC, RSA 키타입이 아님");
     }
 
     private PublicKey getEcPublicKey(ECPublicKeyVO ecPublicKeyVO) throws NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException {
@@ -177,24 +204,22 @@ public class WebAuthnService {
 
         ECParameterSpec ecParameterSpec = parameters.getParameterSpec(ECParameterSpec.class);
         ECPublicKeySpec publicKeySpec = new ECPublicKeySpec(ecPoint, ecParameterSpec);
-        KeyFactory keyFactory = KeyFactory.getInstance("EC");
-        return keyFactory.generatePublic(publicKeySpec);
+        return KeyFactory.getInstance("EC").generatePublic(publicKeySpec);
+
     }
 
     private PublicKey getRsaPublicKey(RSAPublicKeyVO rsaPublicKeyVO) throws NoSuchAlgorithmException, InvalidKeySpecException {
         BigInteger modulus = rsaPublicKeyVO.getModulus();
         BigInteger exponent = rsaPublicKeyVO.getExponent();
         RSAPublicKeySpec rsaPublicKeySpec = new RSAPublicKeySpec(modulus, exponent);
-        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        return keyFactory.generatePublic(rsaPublicKeySpec);
+        return KeyFactory.getInstance("RSA").generatePublic(rsaPublicKeySpec);
     }
 
     private PublicKeySource getPublicKeySource(byte[] authData) throws IOException {
         byte[] idLenBytes = Arrays.copyOfRange(authData, 53, 55);
         int idLen = Integer.parseInt(new BigInteger(idLenBytes).toString(16), 16);
         byte[] pubKeyCBOR = Arrays.copyOfRange(authData, 55 + idLen, authData.length);
-        PublicKeySource publicKeySource = new ObjectMapper().readValue(stringifyCBOR(pubKeyCBOR), new TypeReference<>() {});
-        return publicKeySource;
+        return new ObjectMapper().readValue(stringifyCBOR(pubKeyCBOR), new TypeReference<>() {});
     }
 
     private byte[] getMessage(byte[] decodedAuthData, byte[] clientDataHash) {
@@ -202,20 +227,6 @@ public class WebAuthnService {
                 .put(decodedAuthData)
                 .put(clientDataHash)
                 .array();
-    }
-
-    private ClientData parseClientData(String clientDataJSON) throws JsonProcessingException {
-        log.info("clientDataJSON : {}", clientDataJSON);
-        String decodedClientData = new String(decoder.decode(clientDataJSON), StandardCharsets.UTF_8);
-        return objMapper.readValue(decodedClientData, new TypeReference<>() {
-        });
-    }
-
-    private Attestation parseAttestation(String base64EncodedCborAttestation) throws IOException {
-        log.info("attestation : {}", base64EncodedCborAttestation);
-        byte[] attestationObject = decoder.decode(base64EncodedCborAttestation);
-        return objMapper.readValue(stringifyCBOR(attestationObject), new TypeReference<>() {
-        });
     }
 
     private static Signature getECSignature(PublicKeySource publicKeySource) throws NoSuchAlgorithmException, NoSuchProviderException {
@@ -232,4 +243,28 @@ public class WebAuthnService {
         throw new IllegalArgumentException("not supported alg");
     }
 
+    public boolean assertPublicKeyCredential(AuthenticationPublicKeyCredential credential) throws NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException, NoSuchProviderException, InvalidKeyException, SignatureException {
+        log.info("=== assertion start ===");
+        byte[] authData = decodeBase64(credential.getAuthenticatorData());
+        String userId = new String(decodeBase64(credential.getUserHandle()));
+
+        PublicKeySource publicKeySource = keySourceRepository.findByUserId(userId).orElseThrow(() -> new RuntimeException("존재하지 않는 사용자"));
+        byte[] clientDataHash = hash(credential.getClientDataJSON());
+        byte[] message = getMessage(authData, clientDataHash);
+        String keyType = publicKeySource.getKeyType();
+        PublicKey publicKey = getPublicKey(publicKeySource);
+        Signature signature = null;
+        if(keyType.equals("EC")) {
+            signature = getECSignature(publicKeySource);
+        } else if(keyType.equals("RSA")) {
+            signature = getRSASignature(publicKeySource);
+        }
+        signature.initVerify(publicKey);
+        signature.update(message);
+        boolean verify = signature.verify(decodeBase64(credential.getSignature()));
+        if (verify) {
+            log.info("=== assertion success ===");
+        }
+        return true;
+    }
 }

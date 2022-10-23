@@ -1,11 +1,9 @@
-package com.practice.fido.webAuthn.entity.auth;
+package com.practice.fido.webAuthn.dto.registration;
 
 import lombok.Getter;
 
 @Getter
 public class PubKeyCredParams {
-//    ES256(-7, "public-key"),
-//    RS256(-257, "public-key");
     private Integer alg;
     private String type;
 

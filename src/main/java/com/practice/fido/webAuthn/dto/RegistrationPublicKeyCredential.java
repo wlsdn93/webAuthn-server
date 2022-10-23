@@ -3,7 +3,7 @@ package com.practice.fido.webAuthn.dto;
 import lombok.Getter;
 
 @Getter
-public class PublicKeyCredential {
+public class RegistrationPublicKeyCredential {
 
     private String authenticatorAttachment;
     private String id;

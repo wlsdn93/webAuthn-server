@@ -1,4 +1,4 @@
-package com.practice.fido.webAuthn.entity.domain;
+package com.practice.fido.webAuthn.entity;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;
