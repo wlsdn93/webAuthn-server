@@ -4,7 +4,7 @@ import lombok.Getter;
 
 @Getter
 public class AuthenticatorSelection {
-    private String attachment;
+    private String authenticatorAttachment;
     private String userVerification;
     private String residentKey;
     private Boolean requireResidentKey;
@@ -35,11 +35,11 @@ public class AuthenticatorSelection {
         }
     }
 
-    public AuthenticatorSelection(AuthenticatorAttachment attachment,
+    public AuthenticatorSelection(AuthenticatorAttachment authenticatorAttachment,
                                   UserVerification userVerification,
                                   ResidentKey residentKey,
                                   Boolean requireResidentKey) {
-        this.attachment = attachment.value;
+        this.authenticatorAttachment = authenticatorAttachment.value;
         this.userVerification = userVerification.value;
         this.residentKey = residentKey.value;
         this.requireResidentKey = requireResidentKey;

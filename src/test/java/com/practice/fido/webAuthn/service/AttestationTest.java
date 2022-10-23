@@ -6,7 +6,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.cbor.CBORFactory;
 import com.fasterxml.jackson.dataformat.cbor.CBORParser;
-import com.practice.fido.webAuthn.entity.domain.PublicKeySource;
+import com.practice.fido.webAuthn.dto.registration.ClientData;
+import com.practice.fido.webAuthn.entity.PublicKeySource;
 import com.practice.fido.webAuthn.repository.PublicKeySourceRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,7 +21,7 @@ import java.security.*;
 import java.security.spec.*;
 import java.util.*;
 
-public class WebAuthnServiceTest {
+public class AttestationTest {
 
     @Autowired
     PublicKeySourceRepository keySourceRepository;
@@ -31,18 +32,19 @@ public class WebAuthnServiceTest {
         final String base64Signature = "MEUCIQDL4GqDMhphN0clc7lVV87KG0CpstF/uEakF8n1Shln1QIgbMwnGqhbW1YDxofp4UrhPU3x+WX2Sc6XnGaUu6qb3hI=";
         final String base64AuthData = "SZYN5YgOjGh0NBcPZHZgW4/krrmihjLHmVzzuoMdl2NFAAAAAK3OAAI1vMYKZIsLJfHwVQMALQr6E/bsTVnj2wDNeBSjfaQsfNF93xqo6nkZoel1CW5ZjxdzAoOiL9UTgxfdPaUBAgMmIAEhWCDH7Ugz3uf/f5ghXaaVDIM/s9eARc/E86/ukagnsSoqSCJYIBGMhZ/Z0v1BrG6S9opII2DW5hWOkWo7Aw8xaLjNenyT";
         byte[] signatureFromClient = decoder.decode(base64Signature);
-        byte[] AuthenticatorData = decoder.decode(base64AuthData);
+        byte[] authenticatorData = decoder.decode(base64AuthData);
 
-        byte[] idLenBytes = Arrays.copyOfRange(AuthenticatorData, 53, 55);
+        byte[] idLenBytes = Arrays.copyOfRange(authenticatorData, 53, 55);
         int idLen = Integer.parseInt(new BigInteger(idLenBytes).toString(16), 16);
-        byte[] pubKeyCBOR = Arrays.copyOfRange(AuthenticatorData, 55 + idLen, AuthenticatorData.length);
+        byte[] pubKeyCBOR = Arrays.copyOfRange(authenticatorData, 55 + idLen, authenticatorData.length);
 
         // generate clientDataHash
         String base64ClientDataJSON = "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiZUZkUlozQnRSMkpoVHpSb2JrRklVbFZtTm1aZlJHRmZia2xWIiwib3JpZ2luIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgxIiwiY3Jvc3NPcmlnaW4iOmZhbHNlfQ==";
         byte[] clientDataHash = hash(base64ClientDataJSON);
+        ClientData clientData = new ObjectMapper().readValue(decoder.decode(base64ClientDataJSON), new TypeReference<>() {});
 
         // make a message to verify the signature with alg
-        byte[] message = getMessage(AuthenticatorData, clientDataHash);
+        byte[] message = getMessage(authenticatorData, clientDataHash);
 
         // get publicKey from Authenticator Data
         String keyType = getKeyType(pubKeyCBOR);

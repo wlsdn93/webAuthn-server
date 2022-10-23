@@ -48,25 +48,7 @@ public class WebAuthnService {
         this.keySourceRepository = keySourceRepository;
         this.userRepository = userRepository;
     }
-
-    public PublicKeyCredRequestOptions getCredentialRequestOptions() {
-        PublicKeySource publicKeySource = keySourceRepository
-                .findByUserId("BuqvgcZ2VAhx_QAm7KSw")
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 키"));
-        publicKeySource.getCredentialId();
-        // credential 마다 allow transport 를 따로 해야하나?
-        List<AuthenticatorTransport> transports = List.of(new AuthenticatorTransport[]{AuthenticatorTransport.INTERNAL});
-        Challenge challenge = generateChallenge();
-        AllowCredential allowCredential = new AllowCredential(publicKeySource.getCredentialId(), transports);
-        List<AllowCredential> allowCredentials = List.of(new AllowCredential[]{allowCredential});
-        return PublicKeyCredRequestOptions.builder()
-                .allowCredentials(allowCredentials)
-                .challenge(challenge.toString())
-                .userVerification("preferred")
-                .rpId("localhost")
-                .build();
-    }
-
+    
     public PubKeyCredCreatingOptions getCredentialCreatingOptions() {
         //challenge
         Challenge challenge = generateChallenge();
@@ -94,8 +76,8 @@ public class WebAuthnService {
         //authenticationSelection
         AuthenticatorSelection authenticatorSelection =
                 new AuthenticatorSelection(AuthenticatorAttachment.PLATFORM,
-                                            UserVerification.PREFERRED,
-                                            ResidentKey.PREFERRED,
+                                            UserVerification.REQUIRED,
+                                            ResidentKey.REQUIRED,
                             true);
 
         return PubKeyCredCreatingOptions.builder()
@@ -108,11 +90,13 @@ public class WebAuthnService {
     }
     public boolean attestPublicKeyCredential(RegistrationPublicKeyCredential credential) throws IOException, NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException, NoSuchProviderException, InvalidKeyException, SignatureException {
 
-
         // parse credential to get clientData & attestationObject
         ClientData clientData = parseClientData(credential.getClientDataJSON());
         Attestation attestation = parseAttestation(credential.getAttestationObject());
         byte[] authData = decodeBase64(attestation.authData);
+
+        doClientDataValidation(clientData);
+
         if (attestation.fmt.equals("none")) {
             PublicKeySource publicKeySource = getPublicKeySource(authData);
             publicKeySource.setCredentialId(credential.getId());
@@ -120,9 +104,8 @@ public class WebAuthnService {
             keySourceRepository.save(publicKeySource);
             return true;
         }
-        byte[] signatureFromClient = decodeBase64(attestation.attStmt.getSig());
 
-        doClientDataValidation(clientData);
+        byte[] signatureFromClient = decodeBase64(attestation.attStmt.getSig());
 
         PublicKeySource publicKeySource = getPublicKeySource(authData);
         // if x5c not exist : self attestation
@@ -138,19 +121,7 @@ public class WebAuthnService {
             // 2. attStmt.sig 를 authData 와 clientData 그리고 public key 를 이용해서 검증
             byte[] clientDataHash = hash(credential.getClientDataJSON());
             byte[] message = getMessage(authData, clientDataHash);
-            String keyType = publicKeySource.getKeyType();
-
-            // 3.
-            PublicKey publicKey = getPublicKey(publicKeySource);
-            Signature signature = null;
-            if(keyType.equals("EC")) {
-                signature = getECSignature(publicKeySource);
-            } else if(keyType.equals("RSA")) {
-                signature = getRSASignature(publicKeySource);
-            }
-            signature.initVerify(publicKey);
-            signature.update(message);
-            boolean verify = signature.verify(signatureFromClient);
+            boolean verify = isVerified(message, signatureFromClient, publicKeySource);
             if (verify) {
                 log.info("=== success ===");
                 publicKeySource.setCredentialId(credential.getId());
@@ -163,6 +134,57 @@ public class WebAuthnService {
         }
         return false;
     }
+
+    public PublicKeyCredRequestOptions getCredentialRequestOptions() {
+        PublicKeySource publicKeySource = keySourceRepository
+                .findByUserId("BuqvgcZ2VAhx_QAm7KSw")
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 키"));
+        publicKeySource.getCredentialId();
+        // credential 마다 allow transport 를 따로 해야하나?
+        List<AuthenticatorTransport> transports = List.of(new AuthenticatorTransport[]{AuthenticatorTransport.INTERNAL});
+        Challenge challenge = generateChallenge();
+        AllowCredential allowCredential = new AllowCredential(publicKeySource.getCredentialId(), transports);
+        List<AllowCredential> allowCredentials = List.of(new AllowCredential[]{allowCredential});
+        return PublicKeyCredRequestOptions.builder()
+                .allowCredentials(allowCredentials)
+                .challenge(challenge.toString())
+                .userVerification("preferred")
+                .rpId("localhost")
+                .build();
+    }
+
+    public boolean assertPublicKeyCredential(AuthenticationPublicKeyCredential credential) throws NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException, NoSuchProviderException, InvalidKeyException, SignatureException {
+        log.info("=== assertion start ===");
+        byte[] authData = decodeBase64(credential.getAuthenticatorData());
+        String userId = new String(decodeBase64(credential.getUserHandle()));
+
+        byte[] clientDataHash = hash(credential.getClientDataJSON());
+        byte[] message = getMessage(authData, clientDataHash);
+        
+        PublicKeySource publicKeySource = keySourceRepository.findByUserId(userId).orElseThrow(() -> new RuntimeException("존재하지 않는 사용자"));
+        byte[] digitalSign = decodeBase64(credential.getSignature());
+        boolean verify = isVerified(message, digitalSign, publicKeySource);
+        if (verify) {
+            log.info("=== assertion success ===");
+        }
+        return true;
+    }
+
+    private boolean isVerified(byte[] message, byte[] digitalSign, PublicKeySource publicKeySource) throws NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException, NoSuchProviderException, InvalidKeyException, SignatureException {
+        String keyType = publicKeySource.getKeyType();
+        PublicKey publicKey = getPublicKey(publicKeySource);
+        Signature signature = null;
+        if(keyType.equals("EC")) {
+            signature = getECSignature(publicKeySource);
+        } else if(keyType.equals("RSA")) {
+            signature = getRSASignature(publicKeySource);
+        }
+        signature.initVerify(publicKey);
+        signature.update(message);
+        boolean verify = signature.verify(digitalSign);
+        return verify;
+    }
+
 
     // client data 에서 origin, challenge, type 확인
     private void doClientDataValidation(ClientData clientData) {
@@ -242,29 +264,5 @@ public class WebAuthnService {
         }
         throw new IllegalArgumentException("not supported alg");
     }
-
-    public boolean assertPublicKeyCredential(AuthenticationPublicKeyCredential credential) throws NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException, NoSuchProviderException, InvalidKeyException, SignatureException {
-        log.info("=== assertion start ===");
-        byte[] authData = decodeBase64(credential.getAuthenticatorData());
-        String userId = new String(decodeBase64(credential.getUserHandle()));
-
-        PublicKeySource publicKeySource = keySourceRepository.findByUserId(userId).orElseThrow(() -> new RuntimeException("존재하지 않는 사용자"));
-        byte[] clientDataHash = hash(credential.getClientDataJSON());
-        byte[] message = getMessage(authData, clientDataHash);
-        String keyType = publicKeySource.getKeyType();
-        PublicKey publicKey = getPublicKey(publicKeySource);
-        Signature signature = null;
-        if(keyType.equals("EC")) {
-            signature = getECSignature(publicKeySource);
-        } else if(keyType.equals("RSA")) {
-            signature = getRSASignature(publicKeySource);
-        }
-        signature.initVerify(publicKey);
-        signature.update(message);
-        boolean verify = signature.verify(decodeBase64(credential.getSignature()));
-        if (verify) {
-            log.info("=== assertion success ===");
-        }
-        return true;
-    }
+    
 }
