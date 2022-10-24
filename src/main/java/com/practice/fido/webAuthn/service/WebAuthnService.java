@@ -89,7 +89,7 @@ public class WebAuthnService {
                 .build();
     }
     public boolean attestPublicKeyCredential(RegistrationPublicKeyCredential credential) throws IOException, NoSuchAlgorithmException, InvalidParameterSpecException, InvalidKeySpecException, NoSuchProviderException, InvalidKeyException, SignatureException {
-
+        log.info("String attestationObject = \"{}\";", credential.getAttestationObject());
         // parse credential to get clientData & attestationObject
         ClientData clientData = parseClientData(credential.getClientDataJSON());
         Attestation attestation = parseAttestation(credential.getAttestationObject());
@@ -108,6 +108,11 @@ public class WebAuthnService {
         byte[] signatureFromClient = decodeBase64(attestation.attStmt.getSig());
 
         PublicKeySource publicKeySource = getPublicKeySource(authData);
+        log.info("=== public key source ===");
+        log.info("one : {}", publicKeySource.getOne());
+        log.info("three : {}", publicKeySource.getThree());
+        log.info("minusOne : {}", publicKeySource.getMinusOne());
+        log.info("minusTwo : {}", publicKeySource.getMinusTwo());
         // if x5c not exist : self attestation
         String x5c = attestation.attStmt.getX5c();
         if(x5c.isBlank()) {
@@ -259,8 +264,8 @@ public class WebAuthnService {
     }
 
     private static Signature getRSASignature(PublicKeySource publicKeySource) throws NoSuchAlgorithmException, NoSuchProviderException {
-        if (publicKeySource.getThree().equals("-37")) {
-            return Signature.getInstance("SHA256withRSA/PSS", "SunRsaSign");
+        if (publicKeySource.getThree().equals("-257")) {
+            return Signature.getInstance("SHA256WithRSA");
         }
         throw new IllegalArgumentException("not supported alg");
     }
