@@ -10,12 +10,15 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.RSAPublicKeySpec;
 import java.util.Arrays;
+import java.util.UUID;
 
 import static com.practice.fido.webAuthn.util.WebAuthnUtil.*;
 
@@ -32,6 +35,10 @@ public class AttestationObjectParseTest {
         Attestation attestation = objectMapper.readValue(a, new TypeReference<>() {
         });
         byte[] authData = decodeBase64(attestation.authData);
+        byte[] aaguid = Arrays.copyOfRange(authData, 37, 53);
+        ByteBuffer bb = ByteBuffer.wrap(aaguid);
+        UUID uuid = new UUID(bb.getLong(), bb.getLong());
+        System.out.println("aaguid = " + uuid);
         byte[] idLenBytes = Arrays.copyOfRange(authData, 53, 55);
         int idLen = Integer.parseInt(new BigInteger(idLenBytes).toString(16), 16);
         byte[] pubKeyCBOR = Arrays.copyOfRange(authData, 55 + idLen, authData.length);
