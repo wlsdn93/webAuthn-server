@@ -144,7 +144,6 @@ public class WebAuthnService {
         PublicKeySource publicKeySource = keySourceRepository
                 .findByUserId("BuqvgcZ2VAhx_QAm7KSw")
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 키"));
-        publicKeySource.getCredentialId();
         // credential 마다 allow transport 를 따로 해야하나?
         List<AuthenticatorTransport> transports = List.of(new AuthenticatorTransport[]{AuthenticatorTransport.INTERNAL});
         Challenge challenge = generateChallenge();
@@ -186,8 +185,7 @@ public class WebAuthnService {
         }
         signature.initVerify(publicKey);
         signature.update(message);
-        boolean verify = signature.verify(digitalSign);
-        return verify;
+        return signature.verify(digitalSign);
     }
 
 
@@ -263,7 +261,7 @@ public class WebAuthnService {
         throw new IllegalArgumentException("not supported alg");
     }
 
-    private static Signature getRSASignature(PublicKeySource publicKeySource) throws NoSuchAlgorithmException, NoSuchProviderException {
+    private static Signature getRSASignature(PublicKeySource publicKeySource) throws NoSuchAlgorithmException {
         if (publicKeySource.getThree().equals("-257")) {
             return Signature.getInstance("SHA256WithRSA");
         }
